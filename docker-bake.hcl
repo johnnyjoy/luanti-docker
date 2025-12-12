@@ -18,7 +18,6 @@ variable "ALL_PLATFORMS" {
     "linux/arm64",
     "linux/ppc64le",
     "linux/s390x",
-    "linux/riscv64"
   ]
 }
 
