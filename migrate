@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Simple Luanti world migration helper.
+#
+# Usage:
+#   ./migration --from=postgresql --to=leveldb \
+#       --source=/srv/luanti/world-pg \
+#       --target=/srv/luanti/world-leveldb
+#
+# Backends: sqlite3 | postgresql | leveldb | redis
+#
+# Strategy:
+#   - If FROM == TO: error (nothing to do)
+#   - If one side is sqlite3: single migration container
+#   - Else: two-step via sqlite3:
+#       FROM → sqlite3 (temp dir) → TO
+#
+# Requirements:
+#   - Docker installed
+#   - Images built & tagged as:
+#       ${IMAGE_PREFIX}-sqlite
+#       ${IMAGE_PREFIX}-postgres
+#       ${IMAGE_PREFIX}-leveldb
+#       ${IMAGE_PREFIX}-redis
+#
+# World dirs:
+#   - SOURCE and TARGET must be host paths to directories
+#   - Script mounts them at /world_src and /world_dst in the container
+
+IMAGE="${IMAGE:-tigersmile/luanti}"
+VERSION="${VERSION:-}"
+
+FROM_BACKEND=""
+TO_BACKEND=""
+SOURCE_DIR=""
+TARGET_DIR=""
+TMP_SQLITE_DIR=""
+
+die() {
+  echo "ERROR: $*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<EOF
+Usage:
+  $0 --from=BACKEND --to=BACKEND --source=DIR --target=DIR --version=LUANTI_VERSION [--tmp-sqlite=DIR]
+
+BACKEND: sqlite3 | postgresql | leveldb | redis
+
+Examples:
+  # Postgres -> SQLite
+  $0 --from=postgresql --to=sqlite3 \
+     --source=/srv/luanti/world-pg \
+     --target=/srv/luanti/world-sqlite \
+     --version=5.14.0
+
+  # Postgres -> LevelDB (via sqlite)
+  $0 --from=postgresql --to=leveldb \
+     --source=/srv/luanti/world-pg \
+     --target=/srv/luanti/world-leveldb \
+     --tmp-sqlite=/srv/luanti/world-tmp-sqlite \
+     --version=5.14.0
+EOF
+  exit 1
+}
+
+for arg in "$@"; do
+  case "$arg" in
+    --from=*)
+      FROM_BACKEND="${arg#*=}"
+      ;;
+    --to=*)
+      TO_BACKEND="${arg#*=}"
+      ;;
+    --source=*)
+      SOURCE_DIR="${arg#*=}"
+      ;;
+    --target=*)
+      TARGET_DIR="${arg#*=}"
+      ;;
+    --tmp-sqlite=*)
+      TMP_SQLITE_DIR="${arg#*=}"
+      ;;
+    --version=*)
+      VERSION="${arg#*=}"
+      ;;
+    -h|--help)
+      usage
+      ;;
+    *)
+      die "Unknown arg: $arg"
+      ;;
+  esac
+done
+
+[ -n "$FROM_BACKEND" ] || usage
+[ -n "$TO_BACKEND" ]   || usage
+[ -n "$SOURCE_DIR" ]   || usage
+[ -n "$TARGET_DIR" ]   || usage
+[ -n "$VERSION" ]      || usage
+
+case "$FROM_BACKEND" in
+  sqlite3|postgresql|leveldb|redis) ;;
+  *) die "Invalid --from backend: $FROM_BACKEND" ;;
+esac
+
+case "$TO_BACKEND" in
+  sqlite3|postgresql|leveldb|redis) ;;
+  *) die "Invalid --to backend: $TO_BACKEND" ;;
+esac
+
+if [ "$FROM_BACKEND" = "$TO_BACKEND" ]; then
+  die "--from and --to are the same ($FROM_BACKEND); nothing to do"
+fi
+
+[ -d "$SOURCE_DIR" ] || die "Source dir does not exist: $SOURCE_DIR"
+
+# If target dir exists and is non-empty, refuse unless user explicitly cleared it.
+if [ -d "$TARGET_DIR" ] && [ "$(ls -A "$TARGET_DIR" 2>/dev/null | wc -l)" -gt 0 ]; then
+  die "Target dir $TARGET_DIR is not empty; please empty or choose another directory"
+fi
+mkdir -p "$TARGET_DIR"
+
+# Helper: run a one-step migration inside a single image.
+# Arguments:
+#   $1 = backend name (sqlite3|postgresql|leveldb|redis)  [this picks the image]
+#   $2 = source dir (host path)
+#   $3 = target dir (host path)
+migrate_one_step() {
+  local image_backend="$1"
+  local src="$2"
+  local dst="$3"
+
+  local image="${IMAGE}:${image_backend}-${VERSION}"
+  echo "=== One-step migration in image: ${image}"
+  echo "    FROM world: $src"
+  echo "    TO   world: $dst"
+
+  # Ensure target dir exists on host
+  mkdir -p "$dst"
+
+  # We rely on the fact that:
+  #   - world.mt inside /world_src has backend=<FROM_BACKEND>
+  #   - ENTRYPOINT runs bootstrap, but for migration we call luantiserver directly.
+  #
+  # We tell luantiserver:
+  #   - world    = /world_src  (source)
+  #   - migrate  = /world_dst  (target)
+  #
+  # The target world.mt will be written based on the BACKEND env we pass.
+  docker run --rm \
+    -v "$src":/world_src \
+    -v "$dst":/world_dst \
+    "$image" \
+    sh -c '
+      set -eu
+      # Use luantiserver directly, bypass entrypoint
+      # We assume world.mt in /world_src specifies the source backend.
+      # BACKEND for the target is compiled into this image; we only need to
+      # ensure luantiserver knows target dir via --migrate.
+      exec luantiserver \
+        --world /world_src \
+        --migrate /world_dst
+    '
+}
+
+# Cases:
+#   1) FROM or TO is sqlite3 => single container
+#   2) Neither is sqlite3 => two steps via sqlite3
+
+if [ "$FROM_BACKEND" = "sqlite3" ] || [ "$TO_BACKEND" = "sqlite3" ]; then
+  # Simple one-shot:
+  # - If migrating *from* sqlite3, run the target backend image (it supports sqlite3 + target).
+  # - If migrating *to* sqlite3, run the source backend image (sqlite-only image can't read other backends).
+  if [ "$FROM_BACKEND" = "sqlite3" ]; then
+    migrate_one_step "$TO_BACKEND" "$SOURCE_DIR" "$TARGET_DIR"
+  else
+    migrate_one_step "$FROM_BACKEND" "$SOURCE_DIR" "$TARGET_DIR"
+  fi
+  echo "Migration $FROM_BACKEND -> $TO_BACKEND completed."
+  exit 0
+fi
+
+# Multi-step via sqlite3
+TMP_SQLITE_DIR="${TMP_SQLITE_DIR:-}"
+
+if [ -z "$TMP_SQLITE_DIR" ]; then
+  TMP_SQLITE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/luanti-migrate-sqlite-XXXXXX")"
+  echo "Using temporary sqlite world at: $TMP_SQLITE_DIR"
+else
+  mkdir -p "$TMP_SQLITE_DIR"
+fi
+
+echo "=== Step 1: $FROM_BACKEND -> sqlite3"
+migrate_one_step "$FROM_BACKEND" "$SOURCE_DIR" "$TMP_SQLITE_DIR"
+
+echo "=== Step 2: sqlite3 -> $TO_BACKEND"
+migrate_one_step "$TO_BACKEND" "$TMP_SQLITE_DIR" "$TARGET_DIR"
+
+echo "Migration $FROM_BACKEND -> $TO_BACKEND completed via sqlite3 ($TMP_SQLITE_DIR)."
+
+# You can choose to keep or remove the temp sqlite world; we leave it by default.
