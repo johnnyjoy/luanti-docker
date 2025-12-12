@@ -1,20 +1,11 @@
+# Version of Luanti upstream (Git tag that actually exists)
 variable "LUANTI_VERSION" {
-  # Overridden by workflow on tag: v5.14.0 -> 5.14.0
   default = "5.14.0"
 }
 
-# All platforms you want to build for (same list as nginx-micro)
-variable "ALL_PLATFORMS" {
-  default = [
-    "linux/386",
-    "linux/amd64",
-    "linux/arm/v6",
-    "linux/arm/v7",
-    "linux/arm64",
-    "linux/ppc64le",
-    "linux/s390x",
-    "linux/riscv64"
-  ]
+# Version you want to tag your images with (can be 5.14.0-3, etc.)
+variable "IMAGE_VERSION" {
+  default = "5.14.0"
 }
 
 # Metadata for OCI labels in the image
@@ -42,12 +33,12 @@ target "luanti-sqlite" {
 
   tags = [
     # Docker Hub
-    "tigersmile/luanti:${LUANTI_VERSION}-sqlite3",
+    "tigersmile/luanti:${IMAGE_VERSION}-sqlite3",
     "tigersmile/luanti:sqlite3",
     "tigersmile/luanti:latest",
 
     # GHCR
-    "ghcr.io/johnnyjoy/luanti:${LUANTI_VERSION}-sqlite3",
+    "ghcr.io/johnnyjoy/luanti:${IMAGE_VERSION}-sqlite3",
     "ghcr.io/johnnyjoy/luanti:sqlite3",
     "ghcr.io/johnnyjoy/luanti:latest",
   ]
@@ -67,7 +58,7 @@ target "luanti-sqlite" {
   ]
 
   args = {
-    "LUANTI_VERSION" = "${LUANTI_VERSION}"
+    "IMAGE_VERSION" = "${IMAGE_VERSION}"
     "IMAGE_SOURCE"   = "${IMAGE_SOURCE}"
     "VCS_REF"        = "${VCS_REF}"
   }
@@ -83,11 +74,11 @@ target "luanti-leveldb" {
 
   tags = [
     # Docker Hub
-    "tigersmile/luanti:${LUANTI_VERSION}-leveldb",
+    "tigersmile/luanti:${IMAGE_VERSION}-leveldb",
     "tigersmile/luanti:leveldb",
 
     # GHCR
-    "ghcr.io/johnnyjoy/luanti:${LUANTI_VERSION}-leveldb",
+    "ghcr.io/johnnyjoy/luanti:${IMAGE_VERSION}-leveldb",
     "ghcr.io/johnnyjoy/luanti:leveldb",
   ]
 
@@ -106,7 +97,7 @@ target "luanti-leveldb" {
   ]
 
   args = {
-    "LUANTI_VERSION" = "${LUANTI_VERSION}"
+    "IMAGE_VERSION" = "${IMAGE_VERSION}"
     "IMAGE_SOURCE"   = "${IMAGE_SOURCE}"
     "VCS_REF"        = "${VCS_REF}"
   }
@@ -121,11 +112,11 @@ target "luanti-postgres" {
 
   tags = [
     # Docker Hub
-    "tigersmile/luanti:${LUANTI_VERSION}-postgresql",
+    "tigersmile/luanti:${IMAGE_VERSION}-postgresql",
     "tigersmile/luanti:postgresql",
 
     # GHCR
-    "ghcr.io/johnnyjoy/luanti:${LUANTI_VERSION}-postgresql",
+    "ghcr.io/johnnyjoy/luanti:${IMAGE_VERSION}-postgresql",
     "ghcr.io/johnnyjoy/luanti:postgresql",
   ]
 
@@ -144,7 +135,7 @@ target "luanti-postgres" {
   ]
 
   args = {
-    "LUANTI_VERSION" = "${LUANTI_VERSION}"
+    "IMAGE_VERSION" = "${IMAGE_VERSION}"
     "IMAGE_SOURCE"   = "${IMAGE_SOURCE}"
     "VCS_REF"        = "${VCS_REF}"
   }
@@ -159,11 +150,11 @@ target "luanti-redis" {
 
   tags = [
     # Docker Hub
-    "tigersmile/luanti:${LUANTI_VERSION}-redis",
+    "tigersmile/luanti:${IMAGE_VERSION}-redis",
     "tigersmile/luanti:redis",
 
     # GHCR
-    "ghcr.io/johnnyjoy/luanti:${LUANTI_VERSION}-redis",
+    "ghcr.io/johnnyjoy/luanti:${IMAGE_VERSION}-redis",
     "ghcr.io/johnnyjoy/luanti:redis",
   ]
 
