@@ -1,0 +1,7 @@
+# Keep the build context minimal and avoid permission issues from local test data.
+# The Dockerfile only needs these files.
+**
+!Dockerfile
+!entrypoint
+!tools/
+!tools/bootstrap

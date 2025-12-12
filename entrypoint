@@ -1,0 +1,337 @@
+#!/bin/sh
+set -eu
+
+# ---------- constants ----------
+
+WORLD_DIR=/world
+PREFIX=/opt/luanti
+LUANTI_CONF=/etc/luanti/luanti.conf
+
+# ---------- helpers ----------
+
+bool_true() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+any_pg_backend() {
+  if [ "${BACKEND:-}" = "postgresql" ]; then return 0; fi
+  if [ "${PLAYER_BACKEND:-}" = "postgresql" ]; then return 0; fi
+  if [ "${AUTH_BACKEND:-}" = "postgresql" ]; then return 0; fi
+  if [ "${MOD_STORAGE_BACKEND:-}" = "postgresql" ]; then return 0; fi
+  return 1
+}
+
+set_conf() {
+  key="$1"
+  val="$2"
+  file="$3"
+
+  [ -z "$val" ] && return 0
+
+  tmp="${file}.tmp"
+  awk -v k="$key" -v v="$val" '
+    BEGIN { done = 0 }
+    {
+      if (done) { print; next }
+      if ($0 ~ /^[ \t]*#/) { print; next }
+      if ($0 ~ "^[ \t]*"k"[ \t]*=") {
+        sub("^[ \t]*"k"[ \t]*=.*", k" = "v)
+        done = 1
+        print
+      } else {
+        print
+      }
+    }
+    END {
+      if (!done) {
+        printf("%s = %s\n", k, v)
+      }
+    }
+  ' "$file" >"$tmp" && mv "$tmp" "$file"
+}
+
+# ---------- core defaults (process-level, *not* world.mt) ----------
+
+: "${BACKEND:=sqlite3}"
+: "${WORLD_NAME:=Adravox World}"
+: "${GAMEID:=minetest}"
+
+# PG defaults
+: "${PG_HOST:=db}"
+: "${PG_DB:=luanti_world}"
+: "${PG_USER:=luanti}"
+: "${PG_SSLMODE:=disable}"
+
+# Server / gameplay defaults
+# Hard defaults
+# Luanti config knobs: *no* semantic defaults here.
+# We only want to write them if the user sets them (env-file, compose, etc).
+: "${SERVER_NAME:=}"
+: "${SERVER_DESCRIPTION:=}"
+: "${SERVER_ANNOUNCE:=}"
+: "${MAX_USERS:=}"
+: "${ENABLE_SECURITY:=}"
+: "${DEFAULT_PRIVS:=}"
+: "${BASIC_PRIVS:=}"
+: "${ENABLE_PVP:=}"
+: "${ENABLE_DAMAGE:=}"
+: "${CREATIVE_MODE:=}"
+: "${ENABLE_ROLLBACK_RECORDING:=}"
+: "${NUM_EMERGE_THREADS:=}"
+: "${ASK_RECONNECT_ON_CRASH:=}"
+: "${DEBUG_LOG_LEVEL:=}"
+: "${PORT:=}"
+
+# These we *don’t* care about if empty, but must exist under set -u
+: "${SERVER_ADDRESS:=}"
+: "${SERVER_URL:=}"
+: "${MOTD:=}"
+: "${REMOTE_MEDIA:=}"
+: "${ADMIN:=}"
+: "${TRUSTED_MODS:=}"
+: "${HTTP_MODS:=}"
+: "${STATIC_SPAWNPOINT:=}"
+: "${DEDICATED_SERVER_STEP:=}"
+: "${PLAYER_TRANSFER_DISTANCE:=}"
+: "${ACTIVE_OBJECT_SEND_RANGE_BLOCKS:=}"
+: "${ACTIVE_BLOCK_RANGE:=}"
+: "${MAX_BLOCK_SEND_DISTANCE:=}"
+: "${SERVER_MAP_SAVE_INTERVAL:=}"
+: "${SERVER_UNLOAD_UNUSED_DATA_TIMEOUT:=}"
+: "${MAX_OBJECTS_PER_BLOCK:=}"
+: "${ACTIVE_BLOCK_MGMT_INTERVAL:=}"
+: "${ABM_INTERVAL:=}"
+: "${ABM_TIME_BUDGET:=}"
+: "${NODETIMER_INTERVAL:=}"
+: "${LIQUID_LOOP_MAX:=}"
+: "${LIQUID_QUEUE_PURGE_TIME:=}"
+: "${LIQUID_UPDATE:=}"
+: "${BLOCK_SEND_OPTIMIZE_DISTANCE:=}"
+: "${BLOCK_CULL_OPTIMIZE_DISTANCE:=}"
+: "${SERVER_SIDE_OCCLUSION_CULLING:=}"
+: "${CHAT_MESSAGE_FORMAT:=}"
+: "${CHATCOMMAND_MSG_TIME_THRESHOLD:=}"
+: "${DISALLOW_EMPTY_PASSWORD:=true}"
+: "${KICK_MSG_SHUTDOWN:=}"
+: "${KICK_MSG_CRASH:=}"
+: "${TIME_SPEED:=}"
+: "${WORLD_START_TIME:=}"
+: "${ITEM_ENTITY_TTL:=}"
+: "${DEFAULT_STACK_MAX:=}"
+: "${ENABLE_ITEM_PICKUP:=false}"
+
+# ---------- world dir + seed ----------
+
+mkdir -p "${WORLD_DIR}"
+chown -R luanti:luanti "${WORLD_DIR}"
+
+SEED_FILE="${WORLD_DIR}/seed"
+FIXED_MAP_SEED="${FIXED_MAP_SEED:-generate}"  # legacy knob if someone really wants it
+
+if [ -f "${SEED_FILE}" ]; then
+  FIXED_MAP_SEED="$(cat "${SEED_FILE}")"
+elif [ "${FIXED_MAP_SEED}" = "generate" ]; then
+  FIXED_MAP_SEED="$(tr -dc '0-9' </dev/urandom | head -c 32 || true)"
+  [ -n "${FIXED_MAP_SEED}" ] || FIXED_MAP_SEED=0
+  echo "${FIXED_MAP_SEED}" >"${SEED_FILE}"
+else
+  echo "${FIXED_MAP_SEED}" >"${SEED_FILE}"
+fi
+
+# Export for bootstrap so it can write "seed = ..." into world.mt.
+# If SEED is already set in env, we respect that instead.
+export SEED="${SEED:-${FIXED_MAP_SEED}}"
+
+# ---------- PostgreSQL wiring ----------
+
+build_pg_configs() {
+  if ! any_pg_backend; then
+    return 0
+  fi
+
+  : "${PG_SERVICE:=backend}"
+  : "${PG_PORT:=5432}"
+
+  application_name="$(printf '%s' "${SERVER_NAME:-${WORLD_NAME}}" | tr -cd '[:alnum:],-_ ')"
+
+  # Password: from secret or PG_PASSWORD
+  PG_PASSWORD_LOCAL=""
+  if [ -f /run/secrets/pg_password ]; then
+    PG_PASSWORD_LOCAL="$(tr -d '\r\n' </run/secrets/pg_password || true)"
+  elif [ -n "${PG_PASSWORD:-}" ]; then
+    PG_PASSWORD_LOCAL="${PG_PASSWORD}"
+  fi
+
+  export PG_SERVICEFILE="/etc/postgresql/pg_service.conf"
+  mkdir -p "$(dirname "${PG_SERVICEFILE}")"
+
+  cat >"${PG_SERVICEFILE}" <<EOF
+[${PG_SERVICE}]
+host=${PG_HOST}
+port=${PG_PORT}
+dbname=${PG_DB}
+user=${PG_USER}
+password=${PG_PASSWORD_LOCAL}
+application_name=${application_name}
+sslmode=${PG_SSLMODE}
+EOF
+
+  chmod 644 "${PG_SERVICEFILE}"
+}
+
+build_pg_configs
+
+# ---------- ensure luanti.conf exists ----------
+
+if [ ! -f "${LUANTI_CONF}" ]; then
+  # In practice Dockerfile should have seeded this, but be defensive.
+  mkdir -p "$(dirname "${LUANTI_CONF}")"
+  : >"${LUANTI_CONF}"
+  chown luanti:luanti "${LUANTI_CONF}"
+fi
+
+# ---------- apply luanti.conf from env ----------
+
+# Identity / networking
+set_conf server_name            "$SERVER_NAME"           "$LUANTI_CONF"
+set_conf server_description     "$SERVER_DESCRIPTION"    "$LUANTI_CONF"
+set_conf server_address         "$SERVER_ADDRESS"        "$LUANTI_CONF"
+set_conf server_url             "$SERVER_URL"            "$LUANTI_CONF"
+set_conf server_announce        "$SERVER_ANNOUNCE"       "$LUANTI_CONF"
+set_conf port                   "$PORT"                  "$LUANTI_CONF"
+set_conf motd                   "$MOTD"                  "$LUANTI_CONF"
+set_conf max_users              "$MAX_USERS"             "$LUANTI_CONF"
+set_conf remote_media           "$REMOTE_MEDIA"          "$LUANTI_CONF"
+
+# Admin / privs
+set_conf name                   "$ADMIN"                 "$LUANTI_CONF"
+set_conf default_privs          "$DEFAULT_PRIVS"         "$LUANTI_CONF"
+set_conf basic_privs            "$BASIC_PRIVS"           "$LUANTI_CONF"
+
+# Security
+set_conf secure.enable_security "$ENABLE_SECURITY"       "$LUANTI_CONF"
+set_conf secure.trusted_mods    "$TRUSTED_MODS"          "$LUANTI_CONF"
+set_conf secure.http_mods       "$HTTP_MODS"             "$LUANTI_CONF"
+set_conf enable_rollback_recording "$ENABLE_ROLLBACK_RECORDING" "$LUANTI_CONF"
+set_conf disallow_empty_password "$DISALLOW_EMPTY_PASSWORD" "$LUANTI_CONF"
+
+# Gameplay
+set_conf enable_pvp             "$ENABLE_PVP"            "$LUANTI_CONF"
+set_conf enable_damage          "$ENABLE_DAMAGE"         "$LUANTI_CONF"
+set_conf creative_mode          "$CREATIVE_MODE"         "$LUANTI_CONF"
+set_conf time_speed             "$TIME_SPEED"            "$LUANTI_CONF"
+set_conf world_start_time       "$WORLD_START_TIME"      "$LUANTI_CONF"
+set_conf item_entity_ttl        "$ITEM_ENTITY_TTL"       "$LUANTI_CONF"
+set_conf default_stack_max      "$DEFAULT_STACK_MAX"     "$LUANTI_CONF"
+
+# Liquids (e.g. LIQUID_LOOP_MAX=0 to hard-disable flow)
+set_conf liquid_loop_max        "$LIQUID_LOOP_MAX"       "$LUANTI_CONF"
+set_conf liquid_queue_purge_time "$LIQUID_QUEUE_PURGE_TIME" "$LUANTI_CONF"
+set_conf liquid_update          "$LIQUID_UPDATE"         "$LUANTI_CONF"
+
+# Chat / UX
+set_conf chat_message_format          "$CHAT_MESSAGE_FORMAT"          "$LUANTI_CONF"
+set_conf chatcommand_msg_time_threshold "$CHATCOMMAND_MSG_TIME_THRESHOLD" "$LUANTI_CONF"
+set_conf kick_msg_shutdown            "$KICK_MSG_SHUTDOWN"            "$LUANTI_CONF"
+set_conf kick_msg_crash               "$KICK_MSG_CRASH"               "$LUANTI_CONF"
+set_conf ask_reconnect_on_crash       "$ASK_RECONNECT_ON_CRASH"       "$LUANTI_CONF"
+
+# Performance / env
+set_conf num_emerge_threads           "$NUM_EMERGE_THREADS"           "$LUANTI_CONF"
+set_conf debug_log_level              "$DEBUG_LOG_LEVEL"              "$LUANTI_CONF"
+set_conf dedicated_server_step        "$DEDICATED_SERVER_STEP"        "$LUANTI_CONF"
+set_conf player_transfer_distance     "$PLAYER_TRANSFER_DISTANCE"     "$LUANTI_CONF"
+set_conf active_object_send_range_blocks "$ACTIVE_OBJECT_SEND_RANGE_BLOCKS" "$LUANTI_CONF"
+set_conf active_block_range           "$ACTIVE_BLOCK_RANGE"           "$LUANTI_CONF"
+set_conf max_block_send_distance      "$MAX_BLOCK_SEND_DISTANCE"      "$LUANTI_CONF"
+set_conf server_map_save_interval     "$SERVER_MAP_SAVE_INTERVAL"     "$LUANTI_CONF"
+set_conf server_unload_unused_data_timeout "$SERVER_UNLOAD_UNUSED_DATA_TIMEOUT" "$LUANTI_CONF"
+set_conf max_objects_per_block        "$MAX_OBJECTS_PER_BLOCK"        "$LUANTI_CONF"
+set_conf active_block_mgmt_interval   "$ACTIVE_BLOCK_MGMT_INTERVAL"   "$LUANTI_CONF"
+set_conf abm_interval                 "$ABM_INTERVAL"                 "$LUANTI_CONF"
+set_conf abm_time_budget              "$ABM_TIME_BUDGET"              "$LUANTI_CONF"
+set_conf nodetimer_interval           "$NODETIMER_INTERVAL"           "$LUANTI_CONF"
+set_conf block_send_optimize_distance "$BLOCK_SEND_OPTIMIZE_DISTANCE" "$LUANTI_CONF"
+set_conf block_cull_optimize_distance "$BLOCK_CULL_OPTIMIZE_DISTANCE" "$LUANTI_CONF"
+set_conf server_side_occlusion_culling "$SERVER_SIDE_OCCLUSION_CULLING" "$LUANTI_CONF"
+
+# Spawn
+set_conf static_spawnpoint            "$STATIC_SPAWNPOINT"            "$LUANTI_CONF"
+set_conf item_drop.enable_item_pickup "$ENABLE_ITEM_PICKUP"            "$LUANTI_CONF"
+
+
+echo "$LUANTI_CONF"
+cat "$LUANTI_CONF"
+
+# ---------- bootstrap world.mt ----------
+
+chown -R luanti:luanti /var/lib/luanti /etc/luanti
+
+su-exec luanti:luanti luajit "${PREFIX}/tools/bootstrap"
+
+# ---------- simple log rotation for /world/luanti.log ----------
+
+rotate_log() {
+  log="$1"
+  max_bytes=$((50 * 1024 * 1024))  # 50MB
+
+  [ -f "$log" ] || return 0
+
+  size=$(stat -c%s "$log" 2>/dev/null || echo 0)
+  [ "$size" -lt "$max_bytes" ] && return 0
+
+  for i in 3 2 1; do
+    prev=$((i - 1))
+    if [ "$prev" -eq 0 ]; then
+      src="$log"
+    else
+      src="$log.$prev"
+    fi
+    dst="$log.$i"
+    [ -f "$src" ] && mv "$src" "$dst"
+  done
+
+  : > "$log"
+}
+
+rotate_log "/world/luanti.log"
+chown luanti:luanti /world/luanti.log* 2>/dev/null || true
+
+# ---------- run server ----------
+
+if bool_true "${USE_TMUX_CONSOLE:-false}"; then
+  session="luanti"
+
+  # If session already exists (container restart), kill it cleanly
+  if tmux has-session -t "$session" 2>/dev/null; then
+    tmux kill-session -t "$session" || true
+  fi
+
+  # tmux is PID 1, luantiserver runs inside the session.
+  su-exec luanti:luanti \
+    tmux new-session -s "$session" -D \
+      ${PREFIX}/bin/luantiserver \
+        --gameid "${GAMEID}" \
+        --config ${LUANTI_CONF} \
+        --world ${WORLD_DIR} \
+        --terminal \
+        --logfile /world/luanti.log
+
+  # PID 1 = this shell; just wait while the session exists
+  while su-exec luanti:luanti tmux has-session -t "$session" 2>/dev/null; do
+    sleep 5
+  done
+
+  exit 0
+else
+  # Normal mode: luantiserver is PID 1
+  exec su-exec luanti:luanti \
+    ${PREFIX}/bin/luantiserver \
+      --gameid "${GAMEID}" \
+      --config "${LUANTI_CONF}" \
+      --world "${WORLD_DIR}" \
+      --logfile /world/luanti.log
+fi

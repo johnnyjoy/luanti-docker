@@ -1,0 +1,213 @@
+#!/usr/bin/env luajit
+
+local function getenv(name)
+  local v = os.getenv(name)
+  if v == nil or v == "" then
+    return nil
+  end
+  return v
+end
+
+local world_dir = "/world"
+local world_mt_path = world_dir .. "/world.mt"
+
+local function read_world_mt(path)
+  local cfg = {}
+  local f = io.open(path, "r")
+  if not f then
+    return cfg
+  end
+  for line in f:lines() do
+    local key, val = line:match("^%s*([%w_%.%-]+)%s*=%s*(.-)%s*$")
+    if key then
+      cfg[key] = val
+    end
+  end
+  f:close()
+  return cfg
+end
+
+local function write_world_mt(path, cfg)
+  local f = assert(io.open(path, "w"))
+
+  if cfg.world_name then f:write("world_name = ", cfg.world_name, "\n") end
+  if cfg.gameid then f:write("gameid = ", cfg.gameid, "\n") end
+
+  if cfg.enable_damage then f:write("enable_damage = ", cfg.enable_damage, "\n") end
+  if cfg.creative_mode then f:write("creative_mode = ", cfg.creative_mode, "\n") end
+  if cfg.server_announce then f:write("server_announce = ", cfg.server_announce, "\n") end
+
+  if cfg.backend then f:write("backend = ", cfg.backend, "\n") end
+  if cfg.player_backend then f:write("player_backend = ", cfg.player_backend, "\n") end
+  if cfg.auth_backend then f:write("auth_backend = ", cfg.auth_backend, "\n") end
+  if cfg.mod_storage_backend then f:write("mod_storage_backend = ", cfg.mod_storage_backend, "\n") end
+  if cfg.readonly_backend then f:write("readonly_backend = ", cfg.readonly_backend, "\n") end
+
+  if cfg.pgsql_connection then
+    f:write("pgsql_connection = ", cfg.pgsql_connection, "\n")
+  end
+  if cfg.pgsql_player_connection then
+    f:write("pgsql_player_connection = ", cfg.pgsql_player_connection, "\n")
+  end
+  if cfg.pgsql_auth_connection then
+    f:write("pgsql_auth_connection = ", cfg.pgsql_auth_connection, "\n")
+  end
+  if cfg.pgsql_mod_storage_connection then
+    f:write("pgsql_mod_storage_connection = ", cfg.pgsql_mod_storage_connection, "\n")
+  end
+
+  if cfg.redis_address then f:write("redis_address = ", cfg.redis_address, "\n") end
+  if cfg.redis_hash then f:write("redis_hash = ", cfg.redis_hash, "\n") end
+  if cfg.redis_port then f:write("redis_port = ", cfg.redis_port, "\n") end
+  if cfg.redis_password then f:write("redis_password = ", cfg.redis_password, "\n") end
+
+  if cfg.seed then f:write("seed = ", cfg.seed, "\n") end
+  if cfg.mg_name then f:write("mg_name = ", cfg.mg_name, "\n") end
+
+  local keys = {}
+  for k, _ in pairs(cfg) do
+    if not (
+        k == "world_name" or
+        k == "gameid" or
+        k == "enable_damage" or
+        k == "creative_mode" or
+        k == "server_announce" or
+        k == "backend" or
+        k == "player_backend" or
+        k == "auth_backend" or
+        k == "mod_storage_backend" or
+        k == "readonly_backend" or
+        k == "pgsql_connection" or
+        k == "pgsql_player_connection" or
+        k == "pgsql_auth_connection" or
+        k == "pgsql_mod_storage_connection" or
+        k == "redis_address" or
+        k == "redis_hash" or
+        k == "redis_port" or
+        k == "redis_password" or
+        k == "seed" or
+        k == "mg_name"
+    ) then
+      table.insert(keys, k)
+    end
+  end
+
+  table.sort(keys)
+  for _, k in ipairs(keys) do
+    f:write(k, " = ", cfg[k], "\n")
+  end
+
+  f:close()
+end
+
+local cfg = read_world_mt(world_mt_path)
+
+local wn = getenv("WORLD_NAME")
+if wn then cfg.world_name = wn end
+
+local gid = getenv("GAMEID")
+if gid then cfg.gameid = gid end
+
+local backend_env = getenv("BACKEND")
+local backend = backend_env or cfg.backend or "sqlite3"
+cfg.backend = backend
+
+local function choose_backend(env_name, key_name, allow_default_to_main)
+  local env_val = getenv(env_name)
+  if env_val and env_val ~= "" then
+    cfg[key_name] = env_val
+  elseif not cfg[key_name] and allow_default_to_main then
+    cfg[key_name] = backend
+  end
+end
+
+choose_backend("PLAYER_BACKEND",       "player_backend",       true)
+choose_backend("AUTH_BACKEND",         "auth_backend",         true)
+choose_backend("MOD_STORAGE_BACKEND",  "mod_storage_backend",  true)
+
+local rb = getenv("READONLY_BACKEND")
+if rb and rb ~= "" then
+  cfg.readonly_backend = rb
+end
+
+local function apply_bool(env_name, key_name)
+  local v = getenv(env_name)
+  if not v then return end
+  local low = v:lower()
+  if low == "true" or low == "1" or low == "yes" or low == "on" then
+    cfg[key_name] = "true"
+  elseif low == "false" or low == "0" or low == "no" or low == "off" then
+    cfg[key_name] = "false"
+  end
+end
+
+apply_bool("ENABLE_DAMAGE",     "enable_damage")
+apply_bool("CREATIVE_MODE",     "creative_mode")
+apply_bool("SERVER_ANNOUNCE",   "server_announce")
+
+local seed_env = getenv("SEED")
+if seed_env then
+  cfg.seed = seed_env
+end
+
+local mg_env = getenv("MG_NAME")
+if mg_env then
+  cfg.mg_name = mg_env
+end
+
+local function any_pg_backend()
+  return cfg.backend == "postgresql"
+      or cfg.player_backend == "postgresql"
+      or cfg.auth_backend == "postgresql"
+      or cfg.mod_storage_backend == "postgresql"
+end
+
+local function any_redis_backend()
+  return cfg.backend == "redis"
+      or cfg.player_backend == "redis"
+      or cfg.auth_backend == "redis"
+      or cfg.mod_storage_backend == "redis"
+end
+
+local pg_service = getenv("PG_SERVICE")
+
+if any_pg_backend() and pg_service and pg_service ~= "" then
+  if not (
+      cfg.pgsql_connection or
+      cfg.pgsql_player_connection or
+      cfg.pgsql_auth_connection or
+      cfg.pgsql_mod_storage_connection
+  ) then
+    cfg.pgsql_connection = "service=" .. pg_service
+  end
+end
+
+-- Ensure per-subsystem pgsql_* connections exist when using postgresql
+if any_pg_backend() and pg_service and pg_service ~= "" then
+  local function ensure_pg_conn(backend_key, conn_key)
+    if cfg[backend_key] == "postgresql" and not cfg[conn_key] then
+      -- Prefer the shared pgsql_connection if it exists, otherwise fall back to service=<PG_SERVICE>
+      local base = cfg.pgsql_connection or ("service=" .. pg_service)
+      cfg[conn_key] = base
+    end
+  end
+
+  ensure_pg_conn("backend",            "pgsql_connection")
+  ensure_pg_conn("player_backend",     "pgsql_player_connection")
+  ensure_pg_conn("auth_backend",       "pgsql_auth_connection")
+  ensure_pg_conn("mod_storage_backend","pgsql_mod_storage_connection")
+end
+
+if any_redis_backend() then
+  local addr = getenv("REDIS_ADDRESS")
+  local hash = getenv("REDIS_HASH")
+  local port = getenv("REDIS_PORT")
+  local pass = getenv("REDIS_PASSWORD")
+
+  if addr and not cfg.redis_address then cfg.redis_address = addr end
+  if hash and not cfg.redis_hash then cfg.redis_hash = hash end
+  if port and not cfg.redis_port then cfg.redis_port = port end
+  if pass and not cfg.redis_password then cfg.redis_password = pass end
+end
+
+write_world_mt(world_mt_path, cfg)

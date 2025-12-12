@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+CONTAINER="${1:-luanti}"
+
+echo "Attaching to Luanti server console inside tmux..."
+echo
+echo "--------------------------------------------------"
+echo " To detach safely without stopping the server:"
+echo "      Press:  Ctrl-b  then  d"
+echo "--------------------------------------------------"
+echo
+
+docker exec -it "$CONTAINER" su-exec luanti:luanti tmux attach -t luanti
+
+# User has detached or console exited
+echo
+echo "Detached from server console."
+echo "Sleeping 3 seconds..."
+sleep 3
+echo "Done."
