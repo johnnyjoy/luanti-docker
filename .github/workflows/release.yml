@@ -38,14 +38,15 @@ jobs:
       - name: Extract versions + metadata
         id: meta
         run: |
-          # GITHUB_REF_NAME is like "v5.14.0" or "v5.14.0-3"
-          RAW="${GITHUB_REF_NAME#v}"        # strip leading 'v' -> "5.14.0" or "5.14.0-3"
+          # GITHUB_REF is like "refs/tags/v5.14.0-6"
+          RAW="${GITHUB_REF##*/}"     # v5.14.0-6
+          RAW="${RAW#v}"              # 5.14.0-6
 
-          # Upstream Luanti version (must match GitHub tag exactly, e.g. 5.14.0)
-          LUANTI_VERSION="${RAW%%-*}"       # take part before first '-' -> "5.14.0"
+          # Upstream Luanti version (must exist as luanti-org/luanti tag)
+          LUANTI_VERSION="${RAW%%-*}" # 5.14.0
 
-          # Image version (can carry your build suffix, e.g. 5.14.0-3)
-          IMAGE_VERSION="$RAW"
+          # Full image version (can carry your suffix, e.g. 5.14.0-6)
+          IMAGE_VERSION="$RAW"        # 5.14.0-6
 
           echo "LUANTI_VERSION=$LUANTI_VERSION" >> "$GITHUB_OUTPUT"
           echo "IMAGE_VERSION=$IMAGE_VERSION"   >> "$GITHUB_OUTPUT"
@@ -58,12 +59,12 @@ jobs:
 
       - name: Bake and push all Luanti images
         uses: docker/bake-action@v5
+        env:
+          LUANTI_VERSION: ${{ steps.meta.outputs.LUANTI_VERSION }}
+          IMAGE_VERSION:  ${{ steps.meta.outputs.IMAGE_VERSION }}
+          IMAGE_SOURCE:   ${{ steps.meta.outputs.IMAGE_SOURCE }}
+          VCS_REF:        ${{ steps.meta.outputs.VCS_REF }}
         with:
           targets: default
           files: docker-bake.hcl
           push: true
-          set: |
-            LUANTI_VERSION=${{ steps.meta.outputs.LUANTI_VERSION }}
-            IMAGE_VERSION=${{ steps.meta.outputs.IMAGE_VERSION }}
-            IMAGE_SOURCE=${{ steps.meta.outputs.IMAGE_SOURCE }}
-            VCS_REF=${{ steps.meta.outputs.VCS_REF }}

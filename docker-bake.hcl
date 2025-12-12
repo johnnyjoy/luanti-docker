@@ -1,14 +1,14 @@
-# Version of Luanti upstream (Git tag that actually exists)
 variable "LUANTI_VERSION" {
+  # Upstream Luanti version (must match luanti-org/luanti tag exactly)
   default = "5.14.0"
 }
 
-# Version you want to tag your images with (can be 5.14.0-3, etc.)
 variable "IMAGE_VERSION" {
+  # Docker image version (can include your build suffix, e.g. 5.14.0-6)
   default = "5.14.0"
 }
 
-# All platforms you want to build for (same list as nginx-micro)
+# All platforms you want to build for (mirrors nginx-micro)
 variable "ALL_PLATFORMS" {
   default = [
     "linux/386",
@@ -22,7 +22,7 @@ variable "ALL_PLATFORMS" {
   ]
 }
 
-# Metadata for OCI labels in the image
+# Metadata for OCI labels
 variable "IMAGE_SOURCE" {
   default = ""
 }
@@ -72,12 +72,11 @@ target "luanti-sqlite" {
   ]
 
   args = {
-    "IMAGE_VERSION" = "${IMAGE_VERSION}"
+    "LUANTI_VERSION" = "${LUANTI_VERSION}"
     "IMAGE_SOURCE"   = "${IMAGE_SOURCE}"
     "VCS_REF"        = "${VCS_REF}"
   }
 
-  # NOTE: match nginx-micro: platforms is a string here
   platforms = "${ALL_PLATFORMS}"
 }
 
@@ -111,7 +110,7 @@ target "luanti-leveldb" {
   ]
 
   args = {
-    "IMAGE_VERSION" = "${IMAGE_VERSION}"
+    "LUANTI_VERSION" = "${LUANTI_VERSION}"
     "IMAGE_SOURCE"   = "${IMAGE_SOURCE}"
     "VCS_REF"        = "${VCS_REF}"
   }
@@ -149,7 +148,7 @@ target "luanti-postgres" {
   ]
 
   args = {
-    "IMAGE_VERSION" = "${IMAGE_VERSION}"
+    "LUANTI_VERSION" = "${LUANTI_VERSION}"
     "IMAGE_SOURCE"   = "${IMAGE_SOURCE}"
     "VCS_REF"        = "${VCS_REF}"
   }
