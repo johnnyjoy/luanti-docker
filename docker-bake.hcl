@@ -8,6 +8,20 @@ variable "IMAGE_VERSION" {
   default = "5.14.0"
 }
 
+# All platforms you want to build for (same list as nginx-micro)
+variable "ALL_PLATFORMS" {
+  default = [
+    "linux/386",
+    "linux/amd64",
+    "linux/arm/v6",
+    "linux/arm/v7",
+    "linux/arm64",
+    "linux/ppc64le",
+    "linux/s390x",
+    "linux/riscv64"
+  ]
+}
+
 # Metadata for OCI labels in the image
 variable "IMAGE_SOURCE" {
   default = ""
