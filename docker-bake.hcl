@@ -1,10 +1,10 @@
-variable "IMAGE" {
-  # Docker Hub repo, e.g. "tigersmile/luanti".
-  default = "tigersmile/luanti"
+variable "LUANTI_VERSION" {
+  # Overridden by workflow on tag: v5.14.0 -> 5.14.0
+  default = "5.14.0"
 }
 
-variable "PLATFORMS" {
-  # Comma-separated list.
+# All platforms you want to build for (same list as nginx-micro)
+variable "ALL_PLATFORMS" {
   default = [
     "linux/386",
     "linux/amd64",
@@ -17,67 +17,175 @@ variable "PLATFORMS" {
   ]
 }
 
-variable "LUANTI_VERSION" {
-  # Used for versioned tags (the Dockerfile also has a default).
-  default = "5.14.0"
-}
-
+# Metadata for OCI labels in the image
 variable "IMAGE_SOURCE" {
-  # e.g. "https://github.com/OWNER/REPO"
   default = ""
 }
 
 variable "VCS_REF" {
-  # e.g. git SHA
   default = ""
 }
 
 group "default" {
-  targets = ["sqlite", "leveldb", "postgres", "redis"]
+  targets = [
+    "luanti-sqlite",
+    "luanti-leveldb",
+    "luanti-postgres",
+    "luanti-redis",
+  ]
 }
 
-target "_common" {
+target "luanti-sqlite" {
   context    = "."
   dockerfile = "Dockerfile"
-  platforms  = split(",", PLATFORMS)
+  target     = "luanti-sqlite"
+
+  tags = [
+    # Docker Hub
+    "tigersmile/luanti:${LUANTI_VERSION}-sqlite3",
+    "tigersmile/luanti:sqlite3",
+    "tigersmile/luanti:latest",
+
+    # GHCR
+    "ghcr.io/johnnyjoy/luanti:${LUANTI_VERSION}-sqlite3",
+    "ghcr.io/johnnyjoy/luanti:sqlite3",
+    "ghcr.io/johnnyjoy/luanti:latest",
+  ]
+
+  cache-from = [
+    {
+      type = "registry"
+      ref  = "tigersmile/luanti-cache"
+    }
+  ]
+  cache-to = [
+    {
+      type = "registry"
+      ref  = "tigersmile/luanti-cache"
+      mode = "max"
+    }
+  ]
+
   args = {
-    LUANTI_VERSION = LUANTI_VERSION
-    IMAGE_SOURCE   = IMAGE_SOURCE
-    VCS_REF        = VCS_REF
+    "LUANTI_VERSION" = "${LUANTI_VERSION}"
+    "IMAGE_SOURCE"   = "${IMAGE_SOURCE}"
+    "VCS_REF"        = "${VCS_REF}"
   }
+
+  # NOTE: match nginx-micro: platforms is a string here
+  platforms = "${ALL_PLATFORMS}"
 }
 
-target "sqlite" {
-  inherits = ["_common"]
-  target   = "luanti-sqlite"
+target "luanti-leveldb" {
+  context    = "."
+  dockerfile = "Dockerfile"
+  target     = "luanti-leveldb"
+
   tags = [
-    "${IMAGE}:sqlite3-${LUANTI_VERSION}",
-    "${IMAGE}:latest",
+    # Docker Hub
+    "tigersmile/luanti:${LUANTI_VERSION}-leveldb",
+    "tigersmile/luanti:leveldb",
+
+    # GHCR
+    "ghcr.io/johnnyjoy/luanti:${LUANTI_VERSION}-leveldb",
+    "ghcr.io/johnnyjoy/luanti:leveldb",
   ]
+
+  cache-from = [
+    {
+      type = "registry"
+      ref  = "tigersmile/luanti-cache"
+    }
+  ]
+  cache-to = [
+    {
+      type = "registry"
+      ref  = "tigersmile/luanti-cache"
+      mode = "max"
+    }
+  ]
+
+  args = {
+    "LUANTI_VERSION" = "${LUANTI_VERSION}"
+    "IMAGE_SOURCE"   = "${IMAGE_SOURCE}"
+    "VCS_REF"        = "${VCS_REF}"
+  }
+
+  platforms = "${ALL_PLATFORMS}"
 }
 
-target "leveldb" {
-  inherits = ["_common"]
-  target   = "luanti-leveldb"
+target "luanti-postgres" {
+  context    = "."
+  dockerfile = "Dockerfile"
+  target     = "luanti-postgres"
+
   tags = [
-    "${IMAGE}:leveldb-${LUANTI_VERSION}",
+    # Docker Hub
+    "tigersmile/luanti:${LUANTI_VERSION}-postgresql",
+    "tigersmile/luanti:postgresql",
+
+    # GHCR
+    "ghcr.io/johnnyjoy/luanti:${LUANTI_VERSION}-postgresql",
+    "ghcr.io/johnnyjoy/luanti:postgresql",
   ]
+
+  cache-from = [
+    {
+      type = "registry"
+      ref  = "tigersmile/luanti-cache"
+    }
+  ]
+  cache-to = [
+    {
+      type = "registry"
+      ref  = "tigersmile/luanti-cache"
+      mode = "max"
+    }
+  ]
+
+  args = {
+    "LUANTI_VERSION" = "${LUANTI_VERSION}"
+    "IMAGE_SOURCE"   = "${IMAGE_SOURCE}"
+    "VCS_REF"        = "${VCS_REF}"
+  }
+
+  platforms = "${ALL_PLATFORMS}"
 }
 
-target "postgres" {
-  inherits = ["_common"]
-  target   = "luanti-postgres"
+target "luanti-redis" {
+  context    = "."
+  dockerfile = "Dockerfile"
+  target     = "luanti-redis"
+
   tags = [
-    "${IMAGE}:postgresql-${LUANTI_VERSION}",
+    # Docker Hub
+    "tigersmile/luanti:${LUANTI_VERSION}-redis",
+    "tigersmile/luanti:redis",
+
+    # GHCR
+    "ghcr.io/johnnyjoy/luanti:${LUANTI_VERSION}-redis",
+    "ghcr.io/johnnyjoy/luanti:redis",
   ]
-}
 
-target "redis" {
-  inherits = ["_common"]
-  target   = "luanti-redis"
-  tags = [
-    "${IMAGE}:redis-${LUANTI_VERSION}",
+  cache-from = [
+    {
+      type = "registry"
+      ref  = "tigersmile/luanti-cache"
+    }
   ]
+  cache-to = [
+    {
+      type = "registry"
+      ref  = "tigersmile/luanti-cache"
+      mode = "max"
+    }
+  ]
+
+  args = {
+    "LUANTI_VERSION" = "${LUANTI_VERSION}"
+    "IMAGE_SOURCE"   = "${IMAGE_SOURCE}"
+    "VCS_REF"        = "${VCS_REF}"
+  }
+
+  platforms = "${ALL_PLATFORMS}"
 }
-
-
