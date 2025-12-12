@@ -1,0 +1,71 @@
+name: Release (build & push on tag)
+
+on:
+  push:
+    tags:
+      - "v*.*.*"     # Only on version tags: v5.14.0, v5.14.1, etc.
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  bake-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version + metadata
+        id: meta
+        run: |
+          TAG=${GITHUB_REF##*/}       # e.g. v5.14.0
+          VER=${TAG#v}                # 5.14.0
+          echo "TAG=${TAG}" >> $GITHUB_OUTPUT
+          echo "LUANTI_VERSION=${VER}" >> $GITHUB_OUTPUT
+
+          IMAGE_SOURCE="https://github.com/${GITHUB_REPOSITORY}"
+          VCS_REF="${GITHUB_SHA}"
+          echo "IMAGE_SOURCE=${IMAGE_SOURCE}" >> $GITHUB_OUTPUT
+          echo "VCS_REF=${VCS_REF}" >> $GITHUB_OUTPUT
+
+      - name: Bake and push all Luanti images
+        uses: docker/bake-action@v5
+        with:
+          targets: default
+          files: docker-bake.hcl
+          push: true
+          set: |
+            luanti-sqlite.args.LUANTI_VERSION=${{ steps.meta.outputs.LUANTI_VERSION }}
+            luanti-leveldb.args.LUANTI_VERSION=${{ steps.meta.outputs.LUANTI_VERSION }}
+            luanti-postgres.args.LUANTI_VERSION=${{ steps.meta.outputs.LUANTI_VERSION }}
+            luanti-redis.args.LUANTI_VERSION=${{ steps.meta.outputs.LUANTI_VERSION }}
+
+            luanti-sqlite.args.IMAGE_SOURCE=${{ steps.meta.outputs.IMAGE_SOURCE }}
+            luanti-leveldb.args.IMAGE_SOURCE=${{ steps.meta.outputs.IMAGE_SOURCE }}
+            luanti-postgres.args.IMAGE_SOURCE=${{ steps.meta.outputs.IMAGE_SOURCE }}
+            luanti-redis.args.IMAGE_SOURCE=${{ steps.meta.outputs.IMAGE_SOURCE }}
+
+            luanti-sqlite.args.VCS_REF=${{ steps.meta.outputs.VCS_REF }}
+            luanti-leveldb.args.VCS_REF=${{ steps.meta.outputs.VCS_REF }}
+            luanti-postgres.args.VCS_REF=${{ steps.meta.outputs.VCS_REF }}
+            luanti-redis.args.VCS_REF=${{ steps.meta.outputs.VCS_REF }}
