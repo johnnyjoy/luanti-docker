@@ -102,8 +102,7 @@ ENV PREFIX=/opt/luanti \
     CXX="g++" \
     CFLAGS="${CFLAGS}" \
     CXXFLAGS="${CXXFLAGS}" \
-    LDFLAGS="${LDFLAGS}" \
-    MAKEFLAGS="-j$(nproc)"
+    LDFLAGS="${LDFLAGS}" 
 
 ###############################################################################
 # BASE CMAKE CONFIG FLAGS (server-only, no client, no sound, etc.)
