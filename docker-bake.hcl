@@ -33,8 +33,13 @@ variable "VCS_REF" {
 group "default" {
   targets = [
     "luanti-sqlite",
-    "luanti-leveldb",
     "luanti-postgres",
+  ]
+}
+
+group "extras" {
+  targets = [
+    "luanti-leveldb",
     "luanti-redis",
   ]
 }
