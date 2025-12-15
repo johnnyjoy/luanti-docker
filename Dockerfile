@@ -16,7 +16,7 @@ ARG ALPINE_VERSION=edge
 ARG LUAROCKS_VERSION=3.12.2
 
 # Conservative default for CI; tune upward once stable.
-ARG BUILD_JOBS=2
+ARG BUILD_JOBS=4
 
 ###############################################################################
 # FETCH: download Luanti source + Minetest Game
