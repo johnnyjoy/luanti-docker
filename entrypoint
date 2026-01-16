@@ -55,7 +55,7 @@ set_conf() {
 
 # ---------- core defaults (process-level, *not* world.mt) ----------
 
-: "${BACKEND:=sqlite3}"
+: "${BACKEND:=postgresql}"
 : "${WORLD_NAME:=Adravox World}"
 : "${GAMEID:=minetest}"
 

@@ -4,32 +4,12 @@ set -eu
 # Set your version here, or pass VERSION=... in env.
 VERSION="${VERSION:-5.14.0}"
 
-# List of build targets and their short tag (if any)
-VARIANTS="
-sqlite:sqlite
-leveldb:leveldb
-postgres:postgres
-redis:redis
-"
+echo "==> Building luantiserver (unified image with SQLite3 + PostgreSQL support)"
 
-for line in $VARIANTS; do
-    # Parse "target:shorttag"
-    tgt=$(echo "$line" | cut -d: -f1)
-    alias=$(echo "$line" | cut -s -d: -f2)
-
-    echo "==> Building target $tgt"
-
-    # Build versioned tag (always)
-    docker build --target "luanti-$tgt" -t "luanti:${VERSION}${alias:+-$alias}" .
-
-    # Build alias tag (if present)
-    if [ -n "$alias" ]; then
-        docker tag "luanti:${VERSION}-$alias" "luanti:$alias"
-    else
-        docker tag "luanti:${VERSION}" "luanti:latest"
-    fi
-done
+# Build versioned tags
+docker build --target "luantiserver" -t "luantiserver:${VERSION}" .
+docker build --target "luantiserver" -t "luantiserver:latest" .
 
 echo
 echo "==> Build complete. Tagged images:"
-docker images | grep ^luanti
+docker images | grep ^luantiserver

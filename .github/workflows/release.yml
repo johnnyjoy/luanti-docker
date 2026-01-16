@@ -57,7 +57,7 @@ jobs:
           echo "IMAGE_SOURCE=$IMAGE_SOURCE" >> "$GITHUB_OUTPUT"
           echo "VCS_REF=$VCS_REF"           >> "$GITHUB_OUTPUT"
 
-      - name: Bake and push all Luanti images
+      - name: Bake and push luantiserver image
         uses: docker/bake-action@v5
         env:
           LUANTI_VERSION: ${{ steps.meta.outputs.LUANTI_VERSION }}

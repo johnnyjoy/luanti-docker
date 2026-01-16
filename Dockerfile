@@ -16,7 +16,7 @@ ARG ALPINE_VERSION=edge
 ARG LUAROCKS_VERSION=3.12.2
 
 # Conservative default for CI; tune upward once stable.
-ARG BUILD_JOBS=4
+ARG BUILD_JOBS=8
 
 ###############################################################################
 # FETCH: download Luanti source + Minetest Game
@@ -77,9 +77,7 @@ RUN --mount=type=cache,target=/var/cache/apk \
       ncurses-dev \
       gettext-dev \
       sqlite-dev \
-      leveldb-dev \
       postgresql-dev \
-      hiredis-dev \
       icu-dev \
       ca-certificates
 
@@ -131,43 +129,11 @@ ENV CMAKE_COMMON_FLAGS="\
 "
 
 ###############################################################################
-# BUILD: SQLite backend
+# BUILD: Unified backend (SQLite3 + PostgreSQL)
 ###############################################################################
-FROM build-base-config AS build-sqlite
+FROM build-base-config AS build-unified
 ARG BUILD_JOBS
-WORKDIR /build/build-sqlite
-RUN --mount=type=cache,target=/ccache \
-    set -eux; \
-    cmake ../luanti ${CMAKE_COMMON_FLAGS} \
-      -DENABLE_SQLITE=ON \
-      -DENABLE_LEVELDB=OFF \
-      -DENABLE_POSTGRESQL=OFF \
-      -DENABLE_REDIS=OFF; \
-    cmake --build . --target install -- -j"${BUILD_JOBS}"; \
-    strip --strip-unneeded ${PREFIX}/bin/luantiserver || true
-
-###############################################################################
-# BUILD: LevelDB backend
-###############################################################################
-FROM build-base-config AS build-leveldb
-ARG BUILD_JOBS
-WORKDIR /build/build-leveldb
-RUN --mount=type=cache,target=/ccache \
-    set -eux; \
-    cmake ../luanti ${CMAKE_COMMON_FLAGS} \
-      -DENABLE_SQLITE=ON \
-      -DENABLE_LEVELDB=ON \
-      -DENABLE_POSTGRESQL=OFF \
-      -DENABLE_REDIS=OFF; \
-    cmake --build . --target install -- -j"${BUILD_JOBS}"; \
-    strip --strip-unneeded ${PREFIX}/bin/luantiserver || true
-
-###############################################################################
-# BUILD: PostgreSQL backend
-###############################################################################
-FROM build-base-config AS build-postgres
-ARG BUILD_JOBS
-WORKDIR /build/build-postgres
+WORKDIR /build/build-unified
 RUN --mount=type=cache,target=/ccache \
     set -eux; \
     cmake ../luanti ${CMAKE_COMMON_FLAGS} \
@@ -175,22 +141,6 @@ RUN --mount=type=cache,target=/ccache \
       -DENABLE_LEVELDB=OFF \
       -DENABLE_POSTGRESQL=ON \
       -DENABLE_REDIS=OFF; \
-    cmake --build . --target install -- -j"${BUILD_JOBS}"; \
-    strip --strip-unneeded ${PREFIX}/bin/luantiserver || true
-
-###############################################################################
-# BUILD: Redis backend
-###############################################################################
-FROM build-base-config AS build-redis
-ARG BUILD_JOBS
-WORKDIR /build/build-redis
-RUN --mount=type=cache,target=/ccache \
-    set -eux; \
-    cmake ../luanti ${CMAKE_COMMON_FLAGS} \
-      -DENABLE_SQLITE=ON \
-      -DENABLE_LEVELDB=OFF \
-      -DENABLE_POSTGRESQL=OFF \
-      -DENABLE_REDIS=ON; \
     cmake --build . --target install -- -j"${BUILD_JOBS}"; \
     strip --strip-unneeded ${PREFIX}/bin/luantiserver || true
 
@@ -218,6 +168,7 @@ RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/testing" >> /etc/apk/reposit
       libaio \
       libspatialindex \
       sqlite-libs \
+      postgresql-libs \
       ncurses-libs \
       libintl \
       libcurl \
@@ -243,7 +194,7 @@ RUN mkdir -p ${PREFIX}/share/luanti/games/minetest
 COPY --from=fetch /build/minetest_game/ ${PREFIX}/share/luanti/games/minetest/
 
 ENV WORLD_DIR=/world \
-    BACKEND=sqlite3 \
+    BACKEND=postgresql \
     WORLD_NAME="Adravox World" \
     GAMEID=minetest
 
@@ -265,11 +216,6 @@ ENV PG_SERVICE= \
     PG_USER=luanti \
     PG_SSLMODE=disable
 
-ENV REDIS_ADDRESS= \
-    REDIS_HASH= \
-    REDIS_PORT= \
-    REDIS_PASSWORD=
-
 COPY tools/bootstrap /opt/luanti/tools/bootstrap
 COPY entrypoint /entrypoint
 
@@ -278,31 +224,11 @@ EXPOSE 30000/udp
 ENTRYPOINT ["/entrypoint"]
 
 ###############################################################################
-# FINAL: SQLite runtime
+# FINAL: Unified runtime (SQLite3 + PostgreSQL)
 ###############################################################################
-FROM luanti-user AS luanti-sqlite
-COPY --from=build-sqlite ${PREFIX} ${PREFIX}
-RUN apk add --no-cache lua5.1-sql-sqlite3
+FROM luanti-user AS luantiserver
+COPY --from=build-unified ${PREFIX} ${PREFIX}
+RUN apk add --no-cache lua5.1-sql-sqlite3 lua5.1-sql-postgres
 RUN luajit -e 'local ok, err = pcall(function() require("luasql.sqlite3") end); if not ok then error(err) end'
-
-###############################################################################
-# FINAL: LevelDB runtime
-###############################################################################
-FROM luanti-user AS luanti-leveldb
-COPY --from=build-leveldb ${PREFIX} ${PREFIX}
-RUN apk add --no-cache leveldb
-
-###############################################################################
-# FINAL: PostgreSQL runtime
-###############################################################################
-FROM luanti-user AS luanti-postgres
-COPY --from=build-postgres ${PREFIX} ${PREFIX}
-RUN apk add --no-cache postgresql-libs lua5.1-sql-postgres
 RUN luajit -e 'local ok, err = pcall(function() require("luasql.postgres") end); if not ok then error(err) end'
 
-###############################################################################
-# FINAL: Redis runtime
-###############################################################################
-FROM luanti-user AS luanti-redis
-COPY --from=build-redis ${PREFIX} ${PREFIX}
-RUN apk add --no-cache hiredis

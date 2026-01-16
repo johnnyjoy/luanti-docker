@@ -32,159 +32,35 @@ variable "VCS_REF" {
 
 group "default" {
   targets = [
-    "luanti-sqlite",
-    "luanti-postgres",
+    "luantiserver",
   ]
 }
 
-group "extras" {
-  targets = [
-    "luanti-leveldb",
-    "luanti-redis",
-  ]
-}
-
-target "luanti-sqlite" {
+target "luantiserver" {
   context    = "."
   dockerfile = "Dockerfile"
-  target     = "luanti-sqlite"
+  target     = "luantiserver"
 
   tags = [
     # Docker Hub
-    "tigersmile/luanti:${IMAGE_VERSION}-sqlite3",
-    "tigersmile/luanti:sqlite3",
-    "tigersmile/luanti:latest",
+    "tigersmile/luantiserver:${IMAGE_VERSION}",
+    "tigersmile/luantiserver:latest",
 
     # GHCR
-    "ghcr.io/johnnyjoy/luanti:${IMAGE_VERSION}-sqlite3",
-    "ghcr.io/johnnyjoy/luanti:sqlite3",
-    "ghcr.io/johnnyjoy/luanti:latest",
+    "ghcr.io/johnnyjoy/luantiserver:${IMAGE_VERSION}",
+    "ghcr.io/johnnyjoy/luantiserver:latest",
   ]
 
   cache-from = [
     {
       type = "registry"
-      ref  = "tigersmile/luanti-cache"
+      ref  = "tigersmile/luantiserver-cache"
     }
   ]
   cache-to = [
     {
       type = "registry"
-      ref  = "tigersmile/luanti-cache"
-      mode = "max"
-    }
-  ]
-
-  args = {
-    "LUANTI_VERSION" = "${LUANTI_VERSION}"
-    "IMAGE_SOURCE"   = "${IMAGE_SOURCE}"
-    "VCS_REF"        = "${VCS_REF}"
-  }
-
-  platforms = "${ALL_PLATFORMS}"
-}
-
-target "luanti-leveldb" {
-  context    = "."
-  dockerfile = "Dockerfile"
-  target     = "luanti-leveldb"
-
-  tags = [
-    # Docker Hub
-    "tigersmile/luanti:${IMAGE_VERSION}-leveldb",
-    "tigersmile/luanti:leveldb",
-
-    # GHCR
-    "ghcr.io/johnnyjoy/luanti:${IMAGE_VERSION}-leveldb",
-    "ghcr.io/johnnyjoy/luanti:leveldb",
-  ]
-
-  cache-from = [
-    {
-      type = "registry"
-      ref  = "tigersmile/luanti-cache"
-    }
-  ]
-  cache-to = [
-    {
-      type = "registry"
-      ref  = "tigersmile/luanti-cache"
-      mode = "max"
-    }
-  ]
-
-  args = {
-    "LUANTI_VERSION" = "${LUANTI_VERSION}"
-    "IMAGE_SOURCE"   = "${IMAGE_SOURCE}"
-    "VCS_REF"        = "${VCS_REF}"
-  }
-
-  platforms = "${ALL_PLATFORMS}"
-}
-
-target "luanti-postgres" {
-  context    = "."
-  dockerfile = "Dockerfile"
-  target     = "luanti-postgres"
-
-  tags = [
-    # Docker Hub
-    "tigersmile/luanti:${IMAGE_VERSION}-postgresql",
-    "tigersmile/luanti:postgresql",
-
-    # GHCR
-    "ghcr.io/johnnyjoy/luanti:${IMAGE_VERSION}-postgresql",
-    "ghcr.io/johnnyjoy/luanti:postgresql",
-  ]
-
-  cache-from = [
-    {
-      type = "registry"
-      ref  = "tigersmile/luanti-cache"
-    }
-  ]
-  cache-to = [
-    {
-      type = "registry"
-      ref  = "tigersmile/luanti-cache"
-      mode = "max"
-    }
-  ]
-
-  args = {
-    "LUANTI_VERSION" = "${LUANTI_VERSION}"
-    "IMAGE_SOURCE"   = "${IMAGE_SOURCE}"
-    "VCS_REF"        = "${VCS_REF}"
-  }
-
-  platforms = "${ALL_PLATFORMS}"
-}
-
-target "luanti-redis" {
-  context    = "."
-  dockerfile = "Dockerfile"
-  target     = "luanti-redis"
-
-  tags = [
-    # Docker Hub
-    "tigersmile/luanti:${IMAGE_VERSION}-redis",
-    "tigersmile/luanti:redis",
-
-    # GHCR
-    "ghcr.io/johnnyjoy/luanti:${IMAGE_VERSION}-redis",
-    "ghcr.io/johnnyjoy/luanti:redis",
-  ]
-
-  cache-from = [
-    {
-      type = "registry"
-      ref  = "tigersmile/luanti-cache"
-    }
-  ]
-  cache-to = [
-    {
-      type = "registry"
-      ref  = "tigersmile/luanti-cache"
+      ref  = "tigersmile/luantiserver-cache"
       mode = "max"
     }
   ]

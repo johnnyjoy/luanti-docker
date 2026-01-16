@@ -56,11 +56,6 @@ local function write_world_mt(path, cfg)
     f:write("pgsql_mod_storage_connection = ", cfg.pgsql_mod_storage_connection, "\n")
   end
 
-  if cfg.redis_address then f:write("redis_address = ", cfg.redis_address, "\n") end
-  if cfg.redis_hash then f:write("redis_hash = ", cfg.redis_hash, "\n") end
-  if cfg.redis_port then f:write("redis_port = ", cfg.redis_port, "\n") end
-  if cfg.redis_password then f:write("redis_password = ", cfg.redis_password, "\n") end
-
   if cfg.seed then f:write("seed = ", cfg.seed, "\n") end
   if cfg.mg_name then f:write("mg_name = ", cfg.mg_name, "\n") end
 
@@ -81,10 +76,6 @@ local function write_world_mt(path, cfg)
         k == "pgsql_player_connection" or
         k == "pgsql_auth_connection" or
         k == "pgsql_mod_storage_connection" or
-        k == "redis_address" or
-        k == "redis_hash" or
-        k == "redis_port" or
-        k == "redis_password" or
         k == "seed" or
         k == "mg_name"
     ) then
@@ -109,7 +100,7 @@ local gid = getenv("GAMEID")
 if gid then cfg.gameid = gid end
 
 local backend_env = getenv("BACKEND")
-local backend = backend_env or cfg.backend or "sqlite3"
+local backend = backend_env or cfg.backend or "postgresql"
 cfg.backend = backend
 
 local function choose_backend(env_name, key_name, allow_default_to_main)
@@ -162,13 +153,6 @@ local function any_pg_backend()
       or cfg.mod_storage_backend == "postgresql"
 end
 
-local function any_redis_backend()
-  return cfg.backend == "redis"
-      or cfg.player_backend == "redis"
-      or cfg.auth_backend == "redis"
-      or cfg.mod_storage_backend == "redis"
-end
-
 local pg_service = getenv("PG_SERVICE")
 
 if any_pg_backend() and pg_service and pg_service ~= "" then
@@ -196,18 +180,6 @@ if any_pg_backend() and pg_service and pg_service ~= "" then
   ensure_pg_conn("player_backend",     "pgsql_player_connection")
   ensure_pg_conn("auth_backend",       "pgsql_auth_connection")
   ensure_pg_conn("mod_storage_backend","pgsql_mod_storage_connection")
-end
-
-if any_redis_backend() then
-  local addr = getenv("REDIS_ADDRESS")
-  local hash = getenv("REDIS_HASH")
-  local port = getenv("REDIS_PORT")
-  local pass = getenv("REDIS_PASSWORD")
-
-  if addr and not cfg.redis_address then cfg.redis_address = addr end
-  if hash and not cfg.redis_hash then cfg.redis_hash = hash end
-  if port and not cfg.redis_port then cfg.redis_port = port end
-  if pass and not cfg.redis_password then cfg.redis_password = pass end
 end
 
 write_world_mt(world_mt_path, cfg)
