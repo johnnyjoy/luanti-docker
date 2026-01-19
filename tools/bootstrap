@@ -182,4 +182,31 @@ if any_pg_backend() and pg_service and pg_service ~= "" then
   ensure_pg_conn("mod_storage_backend","pgsql_mod_storage_connection")
 end
 
+-- Built-in (image) server mods
+local function enable_mod_by_path(modname, modpath)
+  if not modname or modname == "" or not modpath or modpath == "" then return end
+  local k = "load_mod_" .. modname
+  -- Only set it if user hasn't explicitly set it already
+  if cfg[k] == nil then
+    cfg[k] = modpath
+  end
+end
+
+-- Example: enable a healthcheck mod shipped in the image
+local hc_path = getenv("HEALTHCHECK_MOD_PATH") or "/opt/luanti/servermods/healthcheck"
+local hc_enable = getenv("HEALTHCHECK_ENABLE")
+
+-- Default: enable unless explicitly disabled (you can flip this default if you prefer)
+local enable = true
+if hc_enable then
+  local low = hc_enable:lower()
+  if low == "false" or low == "0" or low == "no" or low == "off" then
+    enable = false
+  end
+end
+
+if enable then
+  enable_mod_by_path("healthcheck", hc_path)
+end
+
 write_world_mt(world_mt_path, cfg)

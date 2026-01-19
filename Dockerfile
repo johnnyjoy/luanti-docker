@@ -216,6 +216,12 @@ ENV PG_SERVICE= \
     PG_USER=luanti \
     PG_SSLMODE=disable
 
+RUN mkdir -p /run/luanti && \
+    chown -R luanti:luanti /run/luanti
+
+ENV MINETEST_MOD_PATH=/opt/luanti/servermods
+
+COPY servermods/ /opt/luanti/servermods/
 COPY tools/bootstrap /opt/luanti/tools/bootstrap
 COPY entrypoint /entrypoint
 

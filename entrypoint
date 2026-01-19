@@ -83,7 +83,6 @@ set_conf() {
 : "${NUM_EMERGE_THREADS:=}"
 : "${ASK_RECONNECT_ON_CRASH:=}"
 : "${DEBUG_LOG_LEVEL:=}"
-: "${PORT:=}"
 
 # These we *don’t* care about if empty, but must exist under set -u
 : "${SERVER_ADDRESS:=}"
@@ -201,7 +200,6 @@ set_conf server_description     "$SERVER_DESCRIPTION"    "$LUANTI_CONF"
 set_conf server_address         "$SERVER_ADDRESS"        "$LUANTI_CONF"
 set_conf server_url             "$SERVER_URL"            "$LUANTI_CONF"
 set_conf server_announce        "$SERVER_ANNOUNCE"       "$LUANTI_CONF"
-set_conf port                   "$PORT"                  "$LUANTI_CONF"
 set_conf motd                   "$MOTD"                  "$LUANTI_CONF"
 set_conf max_users              "$MAX_USERS"             "$LUANTI_CONF"
 set_conf remote_media           "$REMOTE_MEDIA"          "$LUANTI_CONF"
